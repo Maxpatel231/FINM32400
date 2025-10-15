@@ -1,9 +1,9 @@
 import pandas as pd
 import argparse
 
-parser = argparse.ArgumentParser(description="Calculate exchange metrics")
-parser.add_argument("--input_csv_file", required=True)
-parser.add_argument("--output_metrics_file", required=True)
+parser = argparse.ArgumentParser(description="Calculate per-exchange execution metrics")
+parser.add_argument("--input_csv_file", required=True, help="Path to CSV produced by fix_to_csv.py")
+parser.add_argument("--output_metrics_file", required=True, help="Path to output metrics CSV")
 args = parser.parse_args()
 
 input_csv_file = args.input_csv_file
@@ -20,6 +20,8 @@ df['AvgPx'] = df['AvgPx'].astype(float)
 df['Side'] = df['Side'].astype(int)
 
 def price_improvement(row):
+    # Side 1 = Buy → improvement if AvgPx < LimitPrice
+    # Side 2 = Sell → improvement if AvgPx > LimitPrice
     if row['Side'] == 1:
         val = row['LimitPrice'] - row['AvgPx']
     else:
@@ -29,9 +31,9 @@ def price_improvement(row):
 df['PriceImprovement'] = df.apply(price_improvement, axis=1)
 
 metrics = df.groupby('LastMkt').agg(
-    AvgPriceImprovement=('PriceImprovement','mean'),
-    AvgExecSpeedSecs=('ExecSpeedSecs','mean')
+    AvgPriceImprovement=('PriceImprovement', 'mean'),
+    AvgExecSpeedSecs=('ExecSpeedSecs', 'mean')
 ).reset_index()
 
 metrics.to_csv(output_metrics_file, index=False)
-print('✅ Metrics saved to', output_metrics_file)
+print(f"✅ Metrics saved to {output_metrics_file}")
