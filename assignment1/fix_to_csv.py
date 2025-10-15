@@ -2,8 +2,8 @@ import csv
 import argparse
 
 parser = argparse.ArgumentParser(description="Convert FIX messages to CSV")
-parser.add_argument("--input_fix_file", required=True)
-parser.add_argument("--output_csv_file", required=True)
+parser.add_argument("--input_fix_file", required=True, help="Path to FIX log file (e.g., trading.fix)")
+parser.add_argument("--output_csv_file", required=True, help="Path to output CSV file")
 args = parser.parse_args()
 
 input_fix_file = args.input_fix_file
@@ -31,10 +31,12 @@ with open(input_fix_file, 'r', encoding='utf-8') as f:
         fields = parse_fix_line(fix_part.strip())
 
         msg_type = fields.get('35')
-        if msg_type == 'D':
+        if msg_type == 'D':  # NewOrderSingle
             orders[fields['11']] = fields
-        elif (msg_type == '8' and fields.get('150') == '2'
-              and fields.get('39') == '2' and fields.get('40') == '2'):
+        elif (
+            msg_type == '8' and fields.get('150') == '2'
+            and fields.get('39') == '2' and fields.get('40') == '2'
+        ):  # Filled ExecutionReport for a LIMIT order
             clid = fields.get('11')
             if clid in orders:
                 order = orders[clid]
