@@ -1,31 +1,37 @@
-import pandas as pd
+import csv
+import argparse
 
-input_csv_file = "orders.csv"
-output_metrics_file = "metrics.csv"
+parser = argparse.ArgumentParser(description="Convert FIX messages to CSV")
+parser.add_argument("--input_fix_file", required=True)
+parser.add_argument("--output_csv_file", required=True)
+args = parser.parse_args()
 
-df = pd.read_csv(input_csv_file)
+input_fix_file = args.input_fix_file
+output_csv_file = args.output_csv_file
 
-df['OrderTransactTime'] = pd.to_datetime(df['OrderTransactTime'])
-df['ExecutionTransactTime'] = pd.to_datetime(df['ExecutionTransactTime'])
-df['ExecSpeedSecs'] = (df['ExecutionTransactTime'] - df['OrderTransactTime']).dt.total_seconds()
+def parse_fix_line(line):
+    if '\x01' not in line:
+        line = line.replace('^A', '\x01')
+    parts = line.split('\x01')
+    fields = {}
+    for p in parts:
+        if '=' in p:
+            tag, value = p.split('=', 1)
+            fields[tag] = value
+    return fields
 
-df['LimitPrice'] = df['LimitPrice'].astype(float)
-df['AvgPx'] = df['AvgPx'].astype(float)
-df['Side'] = df['Side'].astype(int)
+orders = {}
+fills = []
 
-def price_improvement(row):
-    if row['Side'] == 1:
-        val = row['LimitPrice'] - row['AvgPx']
-    else:
-        val = row['AvgPx'] - row['LimitPrice']
-    return max(val, 0)
+with open(input_fix_file, 'r', encoding='utf-8') as f:
+    for raw_line in f:
+        if ':' not in raw_line:
+            continue
+        _, fix_part = raw_line.split(':', 1)
+        fields = parse_fix_line(fix_part.strip())
 
-df['PriceImprovement'] = df.apply(price_improvement, axis=1)
-
-metrics = df.groupby('LastMkt').agg(
-    AvgPriceImprovement=('PriceImprovement','mean'),
-    AvgExecSpeedSecs=('ExecSpeedSecs','mean')
-).reset_index()
-
-metrics.to_csv(output_metrics_file, index=False)
-print('✅ Metrics saved to', output_metrics_file)
+        msg_type = fields.get('35')
+        if msg_type == 'D':
+            orders[fields['11']] = fields
+        elif (msg_type == '8' and fields.get('150') == '2'
+              and fields.get('39') == '2' an
