@@ -20,17 +20,17 @@ df['AvgPx'] = df['AvgPx'].astype(float)
 df['Side'] = df['Side'].astype(int)
 
 def price_improvement(row):
-    if row['Side'] == 1:  # Buy order
+    if row['Side'] == 1:
         val = row['LimitPrice'] - row['AvgPx']
-    else:  # Sell order
+    else:
         val = row['AvgPx'] - row['LimitPrice']
     return max(val, 0)
 
 df['PriceImprovement'] = df.apply(price_improvement, axis=1)
 
 metrics = df.groupby('LastMkt').agg(
-    AvgPriceImprovement=('PriceImprovement', 'mean'),
-    AvgExecSpeedSecs=('ExecSpeedSecs', 'mean')
+    AvgPriceImprovement=('PriceImprovement','mean'),
+    AvgExecSpeedSecs=('ExecSpeedSecs','mean')
 ).reset_index()
 
 metrics.to_csv(output_metrics_file, index=False)
