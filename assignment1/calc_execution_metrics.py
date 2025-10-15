@@ -1,55 +1,37 @@
-import csv
+import pandas as pd
+import argparse
 
-def parse_fix_line(line):
-    if '\x01' not in line:
-        line = line.replace('^A', '\x01')
-    parts = line.split('\x01')
-    fields = {}
-    for p in parts:
-        if '=' in p:
-            tag, value = p.split('=', 1)
-            fields[tag] = value
-    return fields
+parser = argparse.ArgumentParser(description="Calculate exchange metrics")
+parser.add_argument("--input_csv_file", required=True)
+parser.add_argument("--output_metrics_file", required=True)
+args = parser.parse_args()
 
-input_fix_file = "cleaned.fix"
-output_csv_file = "orders.csv"
+input_csv_file = args.input_csv_file
+output_metrics_file = args.output_metrics_file
 
-orders = {}
-fills = []
+df = pd.read_csv(input_csv_file)
 
-with open(input_fix_file, 'r', encoding='utf-8') as f:
-    for raw_line in f:
-        if ':' not in raw_line:
-            continue
-        _, fix_part = raw_line.split(':', 1)
-        fields = parse_fix_line(fix_part.strip())
+df['OrderTransactTime'] = pd.to_datetime(df['OrderTransactTime'])
+df['ExecutionTransactTime'] = pd.to_datetime(df['ExecutionTransactTime'])
+df['ExecSpeedSecs'] = (df['ExecutionTransactTime'] - df['OrderTransactTime']).dt.total_seconds()
 
-        msg_type = fields.get('35')
-        if msg_type == 'D':
-            orders[fields['11']] = fields
-        elif (msg_type == '8' and fields.get('150') == '2'
-              and fields.get('39') == '2' and fields.get('40') == '2'):
-            clid = fields.get('11')
-            if clid in orders:
-                order = orders[clid]
-                fills.append({
-                    'OrderID': clid,
-                    'OrderTransactTime': order.get('60', ''),
-                    'ExecutionTransactTime': fields.get('60', ''),
-                    'Symbol': fields.get('55', ''),
-                    'Side': fields.get('54', ''),
-                    'OrderQty': fields.get('38', ''),
-                    'LimitPrice': fields.get('44', ''),
-                    'AvgPx': fields.get('6', ''),
-                    'LastMkt': fields.get('30', ''),
-                })
+df['LimitPrice'] = df['LimitPrice'].astype(float)
+df['AvgPx'] = df['AvgPx'].astype(float)
+df['Side'] = df['Side'].astype(int)
 
-with open(output_csv_file, 'w', newline='') as out_f:
-    writer = csv.DictWriter(out_f, fieldnames=[
-        'OrderID','OrderTransactTime','ExecutionTransactTime','Symbol',
-        'Side','OrderQty','LimitPrice','AvgPx','LastMkt'
-    ])
-    writer.writeheader()
-    writer.writerows(fills)
+def price_improvement(row):
+    if row['Side'] == 1:  # Buy order
+        val = row['LimitPrice'] - row['AvgPx']
+    else:  # Sell order
+        val = row['AvgPx'] - row['LimitPrice']
+    return max(val, 0)
 
-print(f"✅ Done! Wrote {len(fills)} fills to {output_csv_file}")
+df['PriceImprovement'] = df.apply(price_improvement, axis=1)
+
+metrics = df.groupby('LastMkt').agg(
+    AvgPriceImprovement=('PriceImprovement', 'mean'),
+    AvgExecSpeedSecs=('ExecSpeedSecs', 'mean')
+).reset_index()
+
+metrics.to_csv(output_metrics_file, index=False)
+print('✅ Metrics saved to', output_metrics_file)
